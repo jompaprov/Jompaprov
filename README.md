@@ -1,37 +1,103 @@
-## Welcome to GitHub Pages
+# Exam 2018-06-05
 
-You can use the [editor on GitHub](https://github.com/jompaprov/Jompaprov/edit/master/README.md) to maintain and preview the content for your website in Markdown files.
+## Assignment 2
 
-Whenever you commit to this repository, GitHub Pages will run [Jekyll](https://jekyllrb.com/) to rebuild the pages in your site, from the content in your Markdown files.
+This program starts a process called `watcher` that should monitor the rest of the program.
+There are three calls to `system ps(...)`.
+The first one from `uppg2` and the two other ones from `watcher`.
 
-### Markdown
+### Watcher
+```c
+#include <stdlib.h>
+#include <unistd.h>
 
-Markdown is a lightweight and easy-to-use syntax for styling your writing. It includes conventions for
+int main(int argc, char** argv)
+{
+    sleep(2);
+    system("ps -e -o pid,ppid,comm | grep uppg2");
 
-```markdown
-Syntax highlighted code block
+    sleep(2);
+    system("ps -e -o pid,ppid,comm | grep uppg2");
 
-# Header 1
-## Header 2
-### Header 3
-
-- Bulleted
-- List
-
-1. Numbered
-2. List
-
-**Bold** and _Italic_ and `Code` text
-
-[Link](url) and ![Image](src)
+    return 0;
+}
 ```
+> This file might not match the one used during examination exactly because it was already written.
+The timing might therefore not be the same.
 
-For more details see [GitHub Flavored Markdown](https://guides.github.com/features/mastering-markdown/).
+### Uppg2
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <time.h>
 
-### Jekyll Themes
+int main(int argc, char** argv)
+{
+    if (argc != 2) {
+        printf("Usage: %s [number]\n", argv[0]);
+        return 0;
+    }
 
-Your Pages site will use the layout and styles from the Jekyll theme you have selected in your [repository settings](https://github.com/jompaprov/Jompaprov/settings). The name of this theme is saved in the Jekyll `_config.yml` configuration file.
+    // Start watcher process
+    if (!fork()) {
+        if (!fork()) {
+            execlp("./watcher", "", NULL);
+            printf("Cannot find watcher process\n"); // Debug print
+            exit(0);
+        }
+        exit(0);
+    }
 
-### Support or Contact
+    wait(0);
+    sleep(1); // Timing
+    system("ps -e -o pid,ppid,comm | grep watcher");
 
-Having trouble with Pages? Check out our [documentation](https://help.github.com/categories/github-pages-basics/) or [contact support](https://github.com/contact) and we’ll help you sort it out.
+    // Start child processes
+    srand(time(NULL)); // Set seed
+    
+    int children = atoi(argv[1]);
+    int killer = rand() % children;
+    int status;
+
+    // Print to match exemple output
+    printf("Nr of children: %d\nKiller: %d\n", children, killer + 1);
+
+    int killerPipe[2];
+
+    int i;
+    for (i = 0; i < children; i++) {
+        pipe(killerPipe); // Create pipe in loop, or the program might not work
+
+        if (!fork()) {
+            close(killerPipe[1]); // Not required
+
+            int isKiller;
+            read(killerPipe[0], &isKiller, sizeof(int));
+
+            sleep(2); // Timing
+            if (isKiller)
+                kill(getppid(), 9);
+            else
+                sleep(2); // Do nothing for the rest of the program
+            
+            close(killerPipe[0]); // Not required
+
+            exit(0);
+        }
+
+        status = (i == killer);
+        write(killerPipe[1], &status, sizeof(int));
+
+        close(killerPipe[0]);
+        close(killerPipe[1]);
+    }
+
+    sleep(10); // Sleep untill killed
+
+    printf("Child failed to kill parent\n"); // This should not print
+
+    return 0; // Return something to make the compiler happy
+}
+```
